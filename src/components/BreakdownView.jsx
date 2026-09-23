@@ -9,18 +9,23 @@ import {
   CartesianGrid,
   ResponsiveContainer,
 } from 'recharts'
-import { pivotByCategory, sumByName, pluralize } from '../utils/itemAnalyzer'
+import { aggregateByName, distinctAreas, pluralize, pivotByCourseTerm, TERM_LABELS } from '../utils/itemAnalyzer'
 
 const COLORS = ['#2563eb', '#16a34a', '#d97706', '#7c3aed', '#0891b2']
+const TERM_KEYS = [1, 2, 3]
 
-export default function BreakdownView({ areas, sheets, records }) {
+export default function BreakdownView({ records, courseList }) {
+  const { areas, courses } = useMemo(
+    () => distinctAreas(records, courseList),
+    [records, courseList],
+  )
   const [area, setArea] = useState(areas[0] || '')
-  const areaRecords = useMemo(() => records.filter((r) => r.area === area), [records, area])
-
-  const nameTotals = useMemo(() => sumByName(areaRecords), [areaRecords])
-  const names = useMemo(() => [...nameTotals.keys()].sort(), [nameTotals])
-
   const [probe, setProbe] = useState('')
+
+  const areaRecords = useMemo(() => records.filter((r) => r.area === area), [records, area])
+  const entries = useMemo(() => aggregateByName(areaRecords), [areaRecords])
+  const names = useMemo(() => entries.map((e) => e.name), [entries])
+  const freqByName = useMemo(() => new Map(entries.map((e) => [e.name, e.freq])), [entries])
 
   useEffect(() => {
     if (!areas.includes(area)) setArea(areas[0] || '')
@@ -30,23 +35,23 @@ export default function BreakdownView({ areas, sheets, records }) {
     if (!names.includes(probe)) setProbe(names[0] || '')
   }, [names, probe])
 
-  const termCols = useMemo(() => {
-    const sheet = sheets[area]
-    return sheet ? sheet.headers.slice(1) : []
-  }, [sheets, area])
-
-  const filtered = useMemo(
-    () => areaRecords.filter((r) => r.name === probe),
+  const { rows: pivoted } = useMemo(
+    () => pivotByCourseTerm(areaRecords.filter((r) => r.prove === probe), TERM_KEYS),
     [areaRecords, probe],
   )
-  const pivoted = useMemo(() => pivotByCategory(filtered, termCols), [filtered, termCols])
+
+  const ordered = useMemo(() => {
+    const first = courses.filter((c) => pivoted.some((r) => r.course === c))
+    const rest = pivoted.filter((r) => !courses.includes(r.course))
+    return [...first.map((c) => pivoted.find((r) => r.course === c)), ...rest]
+  }, [courses, pivoted])
 
   if (names.length === 0) {
     return <p className="empty">Aquesta àrea no conté proves per desglossar.</p>
   }
 
-  const totalFreq = filtered.reduce((s, r) => s + r.count, 0)
-  const max = Math.max(1, ...pivoted.flatMap((r) => termCols.map((t) => r[t] || 0)))
+  const totalFreq = areaRecords.filter((r) => r.prove === probe).reduce((s, r) => s + r.count, 0)
+  const max = Math.max(1, ...ordered.flatMap((r) => TERM_KEYS.map((t) => r[t] || 0)))
 
   return (
     <div>
@@ -66,7 +71,7 @@ export default function BreakdownView({ areas, sheets, records }) {
           <select id="bd-probe" value={probe} onChange={(e) => setProbe(e.target.value)}>
             {names.map((n) => (
               <option key={n} value={n}>
-                {n} · {nameTotals.get(n)} {pluralize(nameTotals.get(n))}
+                {n} · {freqByName.get(n)} {pluralize(freqByName.get(n))}
               </option>
             ))}
           </select>
@@ -79,14 +84,14 @@ export default function BreakdownView({ areas, sheets, records }) {
 
       <div className="chart">
         <ResponsiveContainer width="100%" height={360}>
-          <BarChart data={pivoted}>
+          <BarChart data={ordered}>
             <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="category" />
+            <XAxis dataKey="course" />
             <YAxis allowDecimals={false} />
             <Tooltip />
             <Legend />
-            {termCols.map((t, i) => (
-              <Bar key={t} dataKey={t} fill={COLORS[i % COLORS.length]} />
+            {TERM_KEYS.map((t, i) => (
+              <Bar key={t} dataKey={t} name={TERM_LABELS[t - 1]} fill={COLORS[i % COLORS.length]} />
             ))}
           </BarChart>
         </ResponsiveContainer>
@@ -96,19 +101,19 @@ export default function BreakdownView({ areas, sheets, records }) {
         <thead>
           <tr>
             <th>Curs</th>
-            {termCols.map((t) => (
+            {TERM_LABELS.map((t) => (
               <th key={t}>{t}</th>
             ))}
             <th>Total</th>
           </tr>
         </thead>
         <tbody>
-          {pivoted.map((r) => {
-            const rowTotal = termCols.reduce((s, t) => s + (r[t] || 0), 0)
+          {ordered.map((r) => {
+            const rowTotal = TERM_KEYS.reduce((s, t) => s + (r[t] || 0), 0)
             return (
-              <tr key={r.category}>
-                <th>{r.category}</th>
-                {termCols.map((t) => {
+              <tr key={r.course}>
+                <th>{r.course}</th>
+                {TERM_KEYS.map((t) => {
                   const v = r[t] || 0
                   const alpha = v === 0 ? 0 : 0.2 + (v / max) * 0.7
                   return (
@@ -123,9 +128,9 @@ export default function BreakdownView({ areas, sheets, records }) {
           })}
           <tr className="coltot">
             <th>Total</th>
-            {termCols.map((t) => (
+            {TERM_KEYS.map((t) => (
               <td key={t} className="total">
-                {pivoted.reduce((s, r) => s + (r[t] || 0), 0)}
+                {ordered.reduce((s, r) => s + (r[t] || 0), 0)}
               </td>
             ))}
             <td className="total">{totalFreq}</td>

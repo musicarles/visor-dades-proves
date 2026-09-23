@@ -22,49 +22,25 @@ export async function parseSpreadsheet(file) {
   const sheets = {}
   for (const name of workbook.SheetNames) {
     const sheet = workbook.Sheets[name]
-    const rows = XLSX.utils.sheet_to_json(sheet, { defval: null, raw: true })
-
-    if (rows.length === 0) {
-      sheets[name] = { rows: [], headers: [], columns: [] }
-      continue
+    const aoa = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null, raw: true })
+    const headers = []
+    const rows = []
+    if (aoa.length > 0) {
+      const head = aoa[0].map((h) => (h === null || h === undefined ? '' : String(h).trim()))
+      const handled = new Set()
+      headers.push(...head.map((h, i) => (h ? h : `Columna ${i + 1}`)))
+      for (const line of aoa.slice(1)) {
+        if (line.every((v) => v === null || v === undefined || String(v).trim() === '')) continue
+        const obj = {}
+        head.forEach((h, i) => {
+          const key = h || `Columna ${i + 1}`
+          obj[key] = line[i]
+        })
+        rows.push(obj)
+      }
     }
-
-    const headers = Object.keys(rows[0])
-    const columns = headers.map((h) => ({
-      name: h,
-      numeric: isNumericColumn(rows, h),
-    }))
-
-    sheets[name] = { rows, headers, columns }
+    sheets[name] = { name, aoa, headers, rows }
   }
 
   return { fileName: file.name, sheetNames: workbook.SheetNames, sheets }
-}
-
-export function seriesValue(column, row) {
-  const v = row[column.name]
-  if (column.numeric) {
-    if (typeof v === 'number' && Number.isFinite(v)) return v
-    const n = Number(v)
-    return Number.isFinite(n) ? n : 0
-  }
-  if (v === null || v === undefined) return 0
-  const items = String(v)
-    .split(/[\n;,]+/)
-    .map((s) => s.trim())
-    .filter((s) => s && s !== '—' && s !== '-')
-  return items.length
-}
-
-function isNumericColumn(rows, header) {
-  let nonEmpty = 0
-  let numeric = 0
-  for (const row of rows) {
-    const v = row[header]
-    if (v === null || v === undefined || v === '') continue
-    nonEmpty++
-    const n = typeof v === 'number' ? v : Number(String(v).trim())
-    if (typeof n === 'number' && !Number.isNaN(n)) numeric++
-  }
-  return nonEmpty > 0 && numeric / nonEmpty >= 0.8
 }

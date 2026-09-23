@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import FreqView from './FreqView'
+import { distinctAreas } from '../utils/itemAnalyzer'
 
-export default function AreaView({ areas, records }) {
+export default function AreaView({ records, courseList }) {
+  const { areas } = useMemo(() => distinctAreas(records, courseList), [records, courseList])
   const [area, setArea] = useState(areas[0] || '')
 
   useEffect(() => {

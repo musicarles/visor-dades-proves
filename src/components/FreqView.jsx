@@ -12,7 +12,7 @@ import { aggregateByName } from '../utils/itemAnalyzer'
 
 const TOP = 20
 
-export default function FreqView({ records, emptyText = 'No hi ha prove per mostrar.' }) {
+export default function FreqView({ records, emptyText = 'No hi ha proves per mostrar.' }) {
   const agg = useMemo(() => aggregateByName(records), [records])
   const total = useMemo(() => records.reduce((s, r) => s + r.count, 0), [records])
 
